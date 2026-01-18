@@ -1,0 +1,162 @@
+// XBot Database Schema
+// Prisma ORM with SQLite/Turso
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+  // For Turso (production): use libsql://your-db.turso.io
+}
+
+// ==========================================
+// X Account Model
+// ==========================================
+model Account {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  displayName  String?
+  bio          String?
+  sessionData  String?   // Encrypted browser session data
+  status       String    @default("inactive") // active, inactive, suspended, error
+  isActive     Boolean   @default(true)
+  lastActiveAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  tweets          Tweet[]
+  styleProfile    StyleProfile?
+
+  @@map("accounts")
+}
+
+// ==========================================
+// Style Profile Model
+// ==========================================
+model StyleProfile {
+  id               String   @id @default(cuid())
+  accountId        String   @unique
+  toneAnalysis     String   // JSON: formal/casual, humorous/serious, etc.
+  vocabularyStyle  String   // JSON: common words, phrases, hashtag usage
+  topicPreferences String   // JSON: topics frequently discussed
+  postingPatterns  String   // JSON: time preferences, frequency
+  emojiUsage       String?  // JSON: emoji patterns
+  analyzedTweets   Int      @default(0)
+  lastAnalyzedAt   DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("style_profiles")
+}
+
+// ==========================================
+// Tweet Model
+// ==========================================
+// Status values: DRAFT, SCHEDULED, POSTING, POSTED, FAILED, CANCELLED
+model Tweet {
+  id             String    @id @default(cuid())
+  accountId      String
+  content        String
+  generatedBy    String    // AI provider used: openai, claude, gemini, ollama
+  status         String    @default("DRAFT")
+  styleScore     Float?    // How well it matches the user's style (0-1)
+  externalTweetId String?  // X tweet ID after posting
+  threadId       String?   // For grouping thread tweets
+  threadPosition Int?      // Position in thread (1-based)
+  metadata       String?   // JSON: additional data
+  error          String?   // Error message if failed
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  postedAt       DateTime?
+
+  // Relations
+  account       Account        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  scheduledTask ScheduledTask?
+  analyticsLogs AnalyticsLog[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([threadId])
+  @@map("tweets")
+}
+
+// ==========================================
+// Scheduled Task Model
+// ==========================================
+// Status values: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+model ScheduledTask {
+  id           String   @id @default(cuid())
+  tweetId      String   @unique
+  scheduledFor DateTime
+  status       String   @default("PENDING")
+  retryCount   Int      @default(0)
+  executedAt   DateTime?
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  tweet Tweet @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([scheduledFor])
+  @@map("scheduled_tasks")
+}
+
+// ==========================================
+// AI Provider Model
+// ==========================================
+// Type values: OPENAI, CLAUDE, GEMINI, OLLAMA
+model AIProvider {
+  id        String  @id @default(cuid())
+  name      String
+  type      String  // OPENAI, CLAUDE, GEMINI, OLLAMA
+  apiKey    String? // Encrypted
+  baseUrl   String?
+  modelId   String
+  isActive  Boolean @default(true)
+  priority  Int     @default(0) // Higher = preferred
+  config    String? // JSON: additional config
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([type, modelId])
+  @@map("ai_providers")
+}
+
+// ==========================================
+// Analytics Log Model
+// ==========================================
+model AnalyticsLog {
+  id        String   @id @default(cuid())
+  tweetId   String?
+  eventType String   // tweet_generated, tweet_posted, style_analyzed, etc.
+  data      String   // JSON: event-specific data
+  createdAt DateTime @default(now())
+
+  // Relations
+  tweet Tweet? @relation(fields: [tweetId], references: [id], onDelete: SetNull)
+
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("analytics_logs")
+}
+
+// ==========================================
+// Settings Model
+// ==========================================
+model Settings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   // JSON value
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+

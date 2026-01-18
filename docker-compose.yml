@@ -1,0 +1,60 @@
+# XBot Docker Compose Configuration
+version: '3.8'
+
+services:
+  xbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: xbot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/xbot.db
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - SESSION_SECRET=${SESSION_SECRET}
+    volumes:
+      - xbot-data:/app/data
+      - xbot-sessions:/app/.sessions
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - xbot-network
+
+  # Optional: Redis for session management (production)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: xbot-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   networks:
+  #     - xbot-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  xbot-data:
+    driver: local
+  xbot-sessions:
+    driver: local
+  # redis-data:
+  #   driver: local
+
+networks:
+  xbot-network:
+    driver: bridge
