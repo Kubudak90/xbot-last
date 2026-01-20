@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Header } from '@/components/layout'
 import { Button } from '@/components/common'
 import { AccountCard, AddAccountModal, LoginModal } from '@/components/accounts'
@@ -14,14 +14,9 @@ interface Account {
   lastActiveAt: Date | null
 }
 
-// Mock data
-const mockAccounts: Account[] = [
-  { id: '1', username: 'example', displayName: 'Example User', status: 'active', isActive: true, lastActiveAt: new Date(Date.now() - 1000 * 60 * 30) },
-  { id: '2', username: 'testuser', displayName: 'Test User', status: 'inactive', isActive: true, lastActiveAt: null },
-]
-
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>(mockAccounts)
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [loginModal, setLoginModal] = useState<{ isOpen: boolean; accountId: string; username: string }>({
     isOpen: false,
@@ -29,17 +24,69 @@ export default function AccountsPage() {
     username: '',
   })
 
-  const handleAddAccount = async (data: { username: string; password: string; email?: string }) => {
-    // TODO: Implement actual account creation
-    const newAccount = {
-      id: Date.now().toString(),
-      username: data.username,
-      displayName: null,
-      status: 'inactive',
-      isActive: true,
-      lastActiveAt: null,
+  useEffect(() => {
+    fetchAccounts()
+  }, [])
+
+  async function fetchAccounts() {
+    try {
+      const res = await fetch('/api/accounts')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success && data.data) {
+          setAccounts(data.data.map((a: any) => ({
+            ...a,
+            lastActiveAt: a.lastActiveAt ? new Date(a.lastActiveAt) : null,
+          })))
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch accounts:', error)
+    } finally {
+      setLoading(false)
     }
-    setAccounts([...accounts, newAccount])
+  }
+
+  const handleAddAccount = async (data: { username: string; password: string; email?: string }) => {
+    try {
+      // First create the account
+      const createRes = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: data.username }),
+      })
+
+      if (!createRes.ok) {
+        const errorData = await createRes.json()
+        alert(errorData.error || 'Hesap oluşturulamadı')
+        return
+      }
+
+      const createData = await createRes.json()
+      const accountId = createData.data.id
+
+      // Then attempt login via browser automation
+      const loginRes = await fetch('/api/browser/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountId,
+          username: data.username,
+          password: data.password,
+          email: data.email,
+        }),
+      })
+
+      if (loginRes.ok) {
+        fetchAccounts() // Refresh the list
+      } else {
+        const loginData = await loginRes.json()
+        alert(loginData.error || 'Giriş başarısız')
+      }
+    } catch (error) {
+      console.error('Failed to add account:', error)
+      alert('Hesap eklenirken hata oluştu')
+    }
   }
 
   const handleLogin = async (data: {
@@ -49,17 +96,46 @@ export default function AccountsPage() {
     email?: string
     twoFactorCode?: string
   }) => {
-    // TODO: Implement actual login via API
-    console.log('Login:', data)
-    return { success: true }
+    try {
+      const res = await fetch('/api/browser/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      const result = await res.json()
+
+      if (res.ok && result.success) {
+        fetchAccounts() // Refresh the list
+        return { success: true }
+      } else {
+        return { success: false, error: result.error || 'Giriş başarısız' }
+      }
+    } catch (error) {
+      console.error('Login failed:', error)
+      return { success: false, error: 'Bağlantı hatası' }
+    }
   }
 
   const handleEdit = (id: string) => {
+    // Could open an edit modal
     console.log('Edit:', id)
   }
 
-  const handleDelete = (id: string) => {
-    setAccounts(accounts.filter((a) => a.id !== id))
+  const handleDelete = async (id: string) => {
+    if (!confirm('Bu hesabı silmek istediğinizden emin misiniz?')) return
+
+    try {
+      const res = await fetch(`/api/accounts?id=${id}`, {
+        method: 'DELETE',
+      })
+
+      if (res.ok) {
+        setAccounts(accounts.filter((a) => a.id !== id))
+      }
+    } catch (error) {
+      console.error('Failed to delete account:', error)
+    }
   }
 
   const openLoginModal = (id: string) => {
@@ -67,6 +143,20 @@ export default function AccountsPage() {
     if (account) {
       setLoginModal({ isOpen: true, accountId: id, username: account.username })
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen">
+        <Header title="Hesaplar" subtitle="X hesaplarınızı yönetin" />
+        <div className="p-6">
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-500">Yükleniyor...</span>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (

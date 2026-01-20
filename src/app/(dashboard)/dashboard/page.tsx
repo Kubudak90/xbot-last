@@ -1,22 +1,116 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Header } from '@/components/layout'
 import { StatsCard, RecentActivity, QuickActions, UpcomingTweets } from '@/components/dashboard'
 
-// Mock data - will be replaced with real data from API
-const mockActivities = [
-  { id: '1', type: 'tweet' as const, message: 'Yeni tweet paylaşıldı', account: 'example', timestamp: new Date(Date.now() - 1000 * 60 * 5) },
-  { id: '2', type: 'analysis' as const, message: 'Stil analizi tamamlandı', account: 'example', timestamp: new Date(Date.now() - 1000 * 60 * 60) },
-  { id: '3', type: 'like' as const, message: '3 tweet beğenildi', account: 'example', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2) },
-  { id: '4', type: 'follow' as const, message: 'Yeni takipçi: @user123', account: 'example', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 3) },
-]
+interface Stats {
+  totalTweets: number
+  pendingTweets: number
+  styleMatch: number
+  activeAccounts: number
+  tweetChange?: number
+  styleChange?: number
+}
 
-const mockUpcomingTweets = [
-  { id: '1', content: 'AI teknolojisi hakkında heyecan verici gelişmeler var! Thread geliyor...', scheduledFor: new Date(Date.now() + 1000 * 60 * 60 * 2), account: { username: 'example' } },
-  { id: '2', content: 'Hafta sonu kodlama zamanı! Ne üzerinde çalışıyorsunuz?', scheduledFor: new Date(Date.now() + 1000 * 60 * 60 * 5), account: { username: 'example' } },
-]
+interface Activity {
+  id: string
+  type: 'tweet' | 'like' | 'follow' | 'analysis'
+  message: string
+  account: string
+  timestamp: Date
+}
+
+interface UpcomingTweet {
+  id: string
+  content: string
+  scheduledFor: Date
+  account: { username: string }
+}
+
+interface AIProvider {
+  name: string
+  type: string
+  isActive: boolean
+  isHealthy: boolean
+}
 
 export default function DashboardPage() {
+  const [stats, setStats] = useState<Stats>({
+    totalTweets: 0,
+    pendingTweets: 0,
+    styleMatch: 0,
+    activeAccounts: 0,
+  })
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [upcomingTweets, setUpcomingTweets] = useState<UpcomingTweet[]>([])
+  const [providers, setProviders] = useState<AIProvider[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        // Fetch stats
+        const statsRes = await fetch('/api/analytics/stats')
+        if (statsRes.ok) {
+          const statsData = await statsRes.json()
+          if (statsData.success) {
+            setStats({
+              totalTweets: statsData.data.totalTweets || 0,
+              pendingTweets: statsData.data.pendingTweets || 0,
+              styleMatch: statsData.data.averageStyleScore || 0,
+              activeAccounts: statsData.data.activeAccounts || 0,
+              tweetChange: statsData.data.tweetChange,
+              styleChange: statsData.data.styleChange,
+            })
+          }
+        }
+
+        // Fetch upcoming tweets (queue)
+        const queueRes = await fetch('/api/tweets/queue')
+        if (queueRes.ok) {
+          const queueData = await queueRes.json()
+          if (queueData.success && queueData.data) {
+            const upcoming = queueData.data.slice(0, 5).map((tweet: any) => ({
+              id: tweet.id,
+              content: tweet.content,
+              scheduledFor: new Date(tweet.scheduledFor),
+              account: { username: tweet.account?.username || 'unknown' },
+            }))
+            setUpcomingTweets(upcoming)
+          }
+        }
+
+        // Fetch AI providers
+        const providersRes = await fetch('/api/ai/providers')
+        if (providersRes.ok) {
+          const providersData = await providersRes.json()
+          if (providersData.success && providersData.data?.providers) {
+            setProviders(providersData.data.providers)
+          }
+        }
+
+        // Fetch recent activity from analytics
+        const activityRes = await fetch('/api/analytics/stats?includeActivity=true')
+        if (activityRes.ok) {
+          const activityData = await activityRes.json()
+          if (activityData.success && activityData.data?.recentActivity) {
+            setActivities(activityData.data.recentActivity.map((a: any) => ({
+              ...a,
+              timestamp: new Date(a.timestamp),
+            })))
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchDashboardData()
+  }, [])
+
   return (
     <div className="min-h-screen">
       <Header
@@ -29,8 +123,8 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatsCard
             title="Toplam Tweet"
-            value={128}
-            change={12}
+            value={loading ? '-' : stats.totalTweets}
+            change={stats.tweetChange}
             color="blue"
             icon={
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -40,7 +134,7 @@ export default function DashboardPage() {
           />
           <StatsCard
             title="Bekleyen Tweet"
-            value={5}
+            value={loading ? '-' : stats.pendingTweets}
             color="orange"
             icon={
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,8 +144,8 @@ export default function DashboardPage() {
           />
           <StatsCard
             title="Stil Eşleşme"
-            value="87%"
-            change={5}
+            value={loading ? '-' : `${Math.round(stats.styleMatch * 100)}%`}
+            change={stats.styleChange}
             color="purple"
             icon={
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -61,7 +155,7 @@ export default function DashboardPage() {
           />
           <StatsCard
             title="Aktif Hesap"
-            value={2}
+            value={loading ? '-' : stats.activeAccounts}
             color="green"
             icon={
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -76,22 +170,32 @@ export default function DashboardPage() {
           {/* Left Column */}
           <div className="lg:col-span-2 space-y-6">
             <QuickActions />
-            <RecentActivity activities={mockActivities} />
+            <RecentActivity activities={activities} />
           </div>
 
           {/* Right Column */}
           <div className="space-y-6">
-            <UpcomingTweets tweets={mockUpcomingTweets} />
+            <UpcomingTweets tweets={upcomingTweets} />
 
             {/* AI Provider Status */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <h3 className="font-semibold text-gray-900 mb-4">AI Sağlayıcıları</h3>
-              <div className="space-y-3">
-                <ProviderItem name="OpenAI GPT-4" status="active" usage={65} />
-                <ProviderItem name="Claude Sonnet" status="active" usage={30} />
-                <ProviderItem name="Gemini Pro" status="inactive" usage={0} />
-                <ProviderItem name="Ollama Local" status="active" usage={5} />
-              </div>
+              {loading ? (
+                <p className="text-sm text-gray-500">Yükleniyor...</p>
+              ) : providers.length === 0 ? (
+                <p className="text-sm text-gray-500">Henüz AI sağlayıcısı yapılandırılmamış</p>
+              ) : (
+                <div className="space-y-3">
+                  {providers.map((provider) => (
+                    <ProviderItem
+                      key={provider.type}
+                      name={provider.name}
+                      status={provider.isActive ? 'active' : 'inactive'}
+                      isHealthy={provider.isHealthy}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -100,18 +204,14 @@ export default function DashboardPage() {
   )
 }
 
-function ProviderItem({ name, status, usage }: { name: string; status: 'active' | 'inactive'; usage: number }) {
+function ProviderItem({ name, status, isHealthy }: { name: string; status: 'active' | 'inactive'; isHealthy: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className={`w-2 h-2 rounded-full ${status === 'active' ? 'bg-green-500' : 'bg-gray-300'}`} />
+      <div className={`w-2 h-2 rounded-full ${status === 'active' ? (isHealthy ? 'bg-green-500' : 'bg-yellow-500') : 'bg-gray-300'}`} />
       <span className="text-sm text-gray-700 flex-1">{name}</span>
-      <div className="w-20 bg-gray-200 rounded-full h-1.5">
-        <div
-          className="bg-blue-600 h-1.5 rounded-full"
-          style={{ width: `${usage}%` }}
-        />
-      </div>
-      <span className="text-xs text-gray-400 w-8">{usage}%</span>
+      <span className={`text-xs px-2 py-0.5 rounded ${status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+        {status === 'active' ? (isHealthy ? 'Aktif' : 'Bağlanıyor') : 'Pasif'}
+      </span>
     </div>
   )
 }

@@ -6,7 +6,8 @@ import { Button, TextArea, Select, Badge, Card } from '@/components/common'
 interface TweetComposerProps {
   accountId?: string
   onPost: (content: string, scheduledFor?: Date) => Promise<void>
-  onGenerate: (options: GenerateOptions) => Promise<string>
+  onGenerate: (options: GenerateOptions) => Promise<string | null>
+  disabled?: boolean
 }
 
 interface GenerateOptions {
@@ -35,7 +36,7 @@ const tones = [
   { value: 'educational', label: 'Eğitici' },
 ]
 
-export default function TweetComposer({ onPost, onGenerate }: TweetComposerProps) {
+export default function TweetComposer({ onPost, onGenerate, disabled = false }: TweetComposerProps) {
   const [content, setContent] = useState('')
   const [tweetType, setTweetType] = useState('engaging')
   const [tone, setTone] = useState('casual')
@@ -58,7 +59,9 @@ export default function TweetComposer({ onPost, onGenerate }: TweetComposerProps
         topic: topic || undefined,
         tone,
       })
-      setContent(generated)
+      if (generated) {
+        setContent(generated)
+      }
     } catch (error) {
       console.error('Generate error:', error)
     } finally {
@@ -76,7 +79,9 @@ export default function TweetComposer({ onPost, onGenerate }: TweetComposerProps
           topic: topic || undefined,
           tone,
         })
-        results.push(generated)
+        if (generated) {
+          results.push(generated)
+        }
       }
       setSuggestions(results)
     } catch (error) {

@@ -2,176 +2,109 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { tweetQueue } from '@/lib/services'
+import prisma from '@/lib/prisma'
 
-// Get queue status and tweets
+// GET - Get all tweets with optional filters
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get('accountId') || undefined
-    const status = searchParams.get('status') as 'pending' | 'scheduled' | 'processing' | 'posted' | 'failed' | undefined
+    const status = searchParams.get('status') || undefined
     const limit = parseInt(searchParams.get('limit') || '50')
 
-    const [stats, tweets] = await Promise.all([
-      tweetQueue.getQueueStats(accountId),
-      tweetQueue.getQueuedTweets(accountId, status, limit),
-    ])
+    const whereClause: any = {}
+    if (accountId) whereClause.accountId = accountId
+    if (status) whereClause.status = status
+
+    const tweets = await prisma.tweet.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        account: {
+          select: { id: true, username: true, displayName: true },
+        },
+        scheduledTask: true,
+      },
+    })
+
+    // Transform to include scheduledFor from scheduledTask
+    const transformed = tweets.map((t) => ({
+      id: t.id,
+      content: t.content,
+      status: t.status,
+      generatedBy: t.generatedBy,
+      styleScore: t.styleScore,
+      scheduledFor: t.scheduledTask?.scheduledFor || null,
+      createdAt: t.createdAt,
+      postedAt: t.postedAt,
+      error: t.error,
+      account: t.account,
+    }))
 
     return NextResponse.json({
       success: true,
-      data: {
-        stats,
-        tweets: tweets.map(t => ({
-          id: t.id,
-          content: t.content,
-          type: t.type,
-          scheduledFor: t.scheduledFor,
-          status: t.status,
-          retryCount: t.retryCount,
-          metadata: t.metadata,
-          error: t.error,
-          postedAt: t.postedAt,
-        })),
-        count: tweets.length,
-      },
+      data: transformed,
     })
   } catch (error) {
     console.error('Queue fetch error:', error)
     return NextResponse.json(
-      {
-        error: 'Failed to fetch queue',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to fetch queue' },
       { status: 500 }
     )
   }
 }
 
-// Queue actions (update status, reschedule, cancel, delete)
-const QueueActionSchema = z.object({
-  action: z.enum(['update-status', 'reschedule', 'cancel', 'delete', 'reorder', 'cleanup']),
-  tweetId: z.string().optional(),
-  accountId: z.string().optional(),
-  status: z.enum(['pending', 'scheduled', 'processing', 'posted', 'failed', 'cancelled']).optional(),
-  scheduledFor: z.string().transform(s => new Date(s)).optional(),
-  error: z.string().optional(),
-  postedTweetId: z.string().optional(),
-  startTime: z.string().transform(s => new Date(s)).optional(),
-  intervalMinutes: z.number().optional(),
-  olderThanDays: z.number().optional(),
+// POST - Create new tweet
+const CreateTweetSchema = z.object({
+  accountId: z.string().min(1),
+  content: z.string().min(1).max(280),
+  scheduledFor: z.string().optional(),
+  status: z.enum(['DRAFT', 'SCHEDULED', 'POSTED', 'FAILED']).default('DRAFT'),
+  generatedBy: z.string().default('manual'),
 })
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const data = QueueActionSchema.parse(body)
+    const data = CreateTweetSchema.parse(body)
 
-    switch (data.action) {
-      case 'update-status': {
-        if (!data.tweetId || !data.status) {
-          return NextResponse.json(
-            { error: 'tweetId and status are required' },
-            { status: 400 }
-          )
-        }
+    // Create tweet
+    const tweet = await prisma.tweet.create({
+      data: {
+        accountId: data.accountId,
+        content: data.content,
+        status: data.status,
+        generatedBy: data.generatedBy,
+      },
+    })
 
-        await tweetQueue.updateStatus(data.tweetId, data.status, {
-          error: data.error,
-          postedTweetId: data.postedTweetId,
-        })
-
-        return NextResponse.json({
-          success: true,
-          message: `Status updated to ${data.status}`,
-        })
-      }
-
-      case 'reschedule': {
-        if (!data.tweetId) {
-          return NextResponse.json(
-            { error: 'tweetId is required' },
-            { status: 400 }
-          )
-        }
-
-        await tweetQueue.reschedule(data.tweetId, data.scheduledFor)
-
-        return NextResponse.json({
-          success: true,
-          message: 'Tweet rescheduled',
-        })
-      }
-
-      case 'cancel': {
-        if (!data.tweetId) {
-          return NextResponse.json(
-            { error: 'tweetId is required' },
-            { status: 400 }
-          )
-        }
-
-        await tweetQueue.cancel(data.tweetId)
-
-        return NextResponse.json({
-          success: true,
-          message: 'Tweet cancelled',
-        })
-      }
-
-      case 'delete': {
-        if (!data.tweetId) {
-          return NextResponse.json(
-            { error: 'tweetId is required' },
-            { status: 400 }
-          )
-        }
-
-        await tweetQueue.delete(data.tweetId)
-
-        return NextResponse.json({
-          success: true,
-          message: 'Tweet deleted from queue',
-        })
-      }
-
-      case 'reorder': {
-        if (!data.accountId || !data.startTime) {
-          return NextResponse.json(
-            { error: 'accountId and startTime are required' },
-            { status: 400 }
-          )
-        }
-
-        await tweetQueue.reorderQueue(
-          data.accountId,
-          data.startTime,
-          data.intervalMinutes || 60
-        )
-
-        return NextResponse.json({
-          success: true,
-          message: 'Queue reordered',
-        })
-      }
-
-      case 'cleanup': {
-        const deletedCount = await tweetQueue.cleanup(data.olderThanDays || 30)
-
-        return NextResponse.json({
-          success: true,
-          message: `Cleaned up ${deletedCount} old entries`,
-          deletedCount,
-        })
-      }
-
-      default:
-        return NextResponse.json(
-          { error: 'Unknown action' },
-          { status: 400 }
-        )
+    // If scheduled, create scheduled task
+    if (data.scheduledFor && data.status === 'SCHEDULED') {
+      await prisma.scheduledTask.create({
+        data: {
+          tweetId: tweet.id,
+          scheduledFor: new Date(data.scheduledFor),
+          status: 'PENDING',
+        },
+      })
     }
+
+    // Log analytics
+    await prisma.analyticsLog.create({
+      data: {
+        tweetId: tweet.id,
+        eventType: data.scheduledFor ? 'tweet_scheduled' : 'tweet_generated',
+        data: JSON.stringify({ status: data.status }),
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      data: tweet,
+    })
   } catch (error) {
-    console.error('Queue action error:', error)
+    console.error('Tweet creation error:', error)
 
     if (error instanceof z.ZodError) {
       return NextResponse.json(
@@ -181,10 +114,93 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      {
-        error: 'Action failed',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to create tweet' },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE - Delete tweet
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Tweet ID is required' },
+        { status: 400 }
+      )
+    }
+
+    await prisma.tweet.delete({
+      where: { id },
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Tweet deleted',
+    })
+  } catch (error) {
+    console.error('Tweet deletion error:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete tweet' },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH - Update tweet
+const UpdateTweetSchema = z.object({
+  id: z.string().min(1),
+  content: z.string().min(1).max(280).optional(),
+  status: z.enum(['DRAFT', 'SCHEDULED', 'POSTED', 'FAILED', 'CANCELLED']).optional(),
+  scheduledFor: z.string().optional(),
+})
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const data = UpdateTweetSchema.parse(body)
+
+    const updateData: any = {}
+    if (data.content) updateData.content = data.content
+    if (data.status) updateData.status = data.status
+
+    const tweet = await prisma.tweet.update({
+      where: { id: data.id },
+      data: updateData,
+    })
+
+    // Update scheduled task if scheduledFor is provided
+    if (data.scheduledFor) {
+      await prisma.scheduledTask.upsert({
+        where: { tweetId: data.id },
+        update: { scheduledFor: new Date(data.scheduledFor) },
+        create: {
+          tweetId: data.id,
+          scheduledFor: new Date(data.scheduledFor),
+          status: 'PENDING',
+        },
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: tweet,
+    })
+  } catch (error) {
+    console.error('Tweet update error:', error)
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validation error', details: error.errors },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to update tweet' },
       { status: 500 }
     )
   }

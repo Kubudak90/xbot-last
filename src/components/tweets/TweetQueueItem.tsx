@@ -18,9 +18,10 @@ interface TweetQueueItemProps {
   onEdit: (id: string) => void
   onDelete: (id: string) => void
   onPostNow: (id: string) => void
+  disabled?: boolean
 }
 
-export default function TweetQueueItem({ tweet, onEdit, onDelete, onPostNow }: TweetQueueItemProps) {
+export default function TweetQueueItem({ tweet, onEdit, onDelete, onPostNow, disabled = false }: TweetQueueItemProps) {
   const getStatusBadge = () => {
     switch (tweet.status) {
       case 'pending':
