@@ -1,15 +1,14 @@
 // XBot Database Schema
-// Prisma ORM with SQLite/Turso
+// Prisma ORM with PostgreSQL (Vercel/Supabase) or SQLite (local)
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-  // For Turso (production): use libsql://your-db.turso.io
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ==========================================
