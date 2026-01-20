@@ -1,5 +1,6 @@
 // Playwright Session Manager
 // Manages browser sessions with cookie persistence and fingerprint rotation
+// Supports both local Playwright and Browserless.io for serverless environments
 
 import { chromium, Browser, BrowserContext, Page } from 'playwright'
 import prisma from '@/lib/prisma'
@@ -59,6 +60,7 @@ export class SessionManager {
   private pages: Map<string, Page> = new Map()
   private config: SessionConfig
   private encryptionKey: string
+  private useBrowserless: boolean
 
   constructor(config: Partial<SessionConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -72,6 +74,9 @@ export class SessionManager {
       )
     }
     this.encryptionKey = envKey
+
+    // Check if we should use Browserless
+    this.useBrowserless = !!process.env.BROWSERLESS_API_KEY
   }
 
   /**
@@ -80,21 +85,31 @@ export class SessionManager {
   async init(): Promise<void> {
     if (this.browser) return
 
-    this.browser = await chromium.launch({
-      headless: this.config.headless,
-      slowMo: this.config.slowMo,
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-      ],
-    })
+    if (this.useBrowserless) {
+      // Connect to Browserless.io
+      const browserlessApiKey = process.env.BROWSERLESS_API_KEY
+      const browserlessUrl = process.env.BROWSERLESS_URL || 'wss://chrome.browserless.io'
+
+      this.browser = await chromium.connect(`${browserlessUrl}?token=${browserlessApiKey}`)
+      console.log('Connected to Browserless.io')
+    } else {
+      // Launch local browser
+      this.browser = await chromium.launch({
+        headless: this.config.headless,
+        slowMo: this.config.slowMo,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu',
+        ],
+      })
+    }
   }
 
   /**
@@ -309,7 +324,12 @@ export class SessionManager {
 
     // Close browser
     if (this.browser) {
-      await this.browser.close()
+      if (this.useBrowserless) {
+        // For Browserless, just disconnect
+        await this.browser.close()
+      } else {
+        await this.browser.close()
+      }
       this.browser = null
     }
   }
