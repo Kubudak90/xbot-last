@@ -19,6 +19,8 @@ model Account {
   username     String    @unique
   displayName  String?
   bio          String?
+  authToken    String?   // X auth_token cookie (encrypted)
+  ct0Token     String?   // X ct0 cookie for CSRF
   sessionData  String?   // Encrypted browser session data
   status       String    @default("inactive") // active, inactive, suspended, error
   isActive     Boolean   @default(true)
