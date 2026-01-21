@@ -5,5 +5,19 @@
   "regions": ["fra1"],
   "env": {
     "NEXT_TELEMETRY_DISABLED": "1"
+  },
+  "functions": {
+    "src/app/api/browser/login/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/browser/post/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/browser/scrape/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/browser/interact/route.ts": {
+      "maxDuration": 60
+    }
   }
 }

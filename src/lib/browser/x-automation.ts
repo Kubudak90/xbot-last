@@ -105,64 +105,72 @@ export class XAutomation {
     const page = await this.getPage()
 
     try {
-      // Navigate to login page
-      await page.goto('https://x.com/i/flow/login', { waitUntil: 'networkidle' })
-      await this.humanDelay(1000, 2000)
+      // Navigate to login page - use domcontentloaded for faster load
+      await page.goto('https://x.com/i/flow/login', { waitUntil: 'domcontentloaded', timeout: 15000 })
+      await this.humanDelay(500, 1000)
 
       // Enter username
       const usernameInput = 'input[autocomplete="username"]'
-      await page.waitForSelector(usernameInput, { timeout: 10000 })
+      await page.waitForSelector(usernameInput, { timeout: 8000 })
       await this.humanType(page, usernameInput, credentials.username)
-      await this.humanDelay(500, 1000)
+      await this.humanDelay(300, 500)
 
       // Click next
       await page.click('text=Next')
-      await this.humanDelay(1500, 3000)
+      await this.humanDelay(800, 1500)
 
-      // Check for email verification
-      const emailVerification = await page.$('input[data-testid="ocfEnterTextTextInput"]')
-      if (emailVerification && credentials.email) {
-        await this.humanType(page, 'input[data-testid="ocfEnterTextTextInput"]', credentials.email)
-        await this.humanDelay(500, 1000)
-        await page.click('text=Next')
-        await this.humanDelay(1500, 3000)
-      } else if (emailVerification && !credentials.email) {
-        return {
-          success: false,
-          requiresEmailVerification: true,
-          error: 'Email verification required',
+      // Check for email verification (with timeout)
+      try {
+        const emailVerification = await page.waitForSelector('input[data-testid="ocfEnterTextTextInput"]', { timeout: 2000 })
+        if (emailVerification && credentials.email) {
+          await this.humanType(page, 'input[data-testid="ocfEnterTextTextInput"]', credentials.email)
+          await this.humanDelay(300, 500)
+          await page.click('text=Next')
+          await this.humanDelay(800, 1200)
+        } else if (emailVerification && !credentials.email) {
+          return {
+            success: false,
+            requiresEmailVerification: true,
+            error: 'Email verification required',
+          }
         }
+      } catch {
+        // No email verification needed, continue
       }
 
       // Enter password
       const passwordInput = 'input[name="password"]'
-      await page.waitForSelector(passwordInput, { timeout: 10000 })
+      await page.waitForSelector(passwordInput, { timeout: 8000 })
       await this.humanType(page, passwordInput, credentials.password)
-      await this.humanDelay(500, 1000)
+      await this.humanDelay(300, 500)
 
       // Click login
       await page.click('[data-testid="LoginForm_Login_Button"]')
-      await this.humanDelay(2000, 4000)
+      await this.humanDelay(1000, 2000)
 
-      // Check for 2FA
-      const twoFactorInput = await page.$('input[data-testid="ocfEnterTextTextInput"]')
-      if (twoFactorInput) {
-        if (credentials.twoFactorCode) {
-          await this.humanType(page, 'input[data-testid="ocfEnterTextTextInput"]', credentials.twoFactorCode)
-          await this.humanDelay(500, 1000)
-          await page.click('text=Next')
-          await this.humanDelay(2000, 4000)
-        } else {
-          return {
-            success: false,
-            requiresTwoFactor: true,
-            error: 'Two-factor authentication required',
+      // Check for 2FA (with timeout)
+      try {
+        const twoFactorInput = await page.waitForSelector('input[data-testid="ocfEnterTextTextInput"]', { timeout: 2000 })
+        if (twoFactorInput) {
+          if (credentials.twoFactorCode) {
+            await this.humanType(page, 'input[data-testid="ocfEnterTextTextInput"]', credentials.twoFactorCode)
+            await this.humanDelay(300, 500)
+            await page.click('text=Next')
+            await this.humanDelay(1000, 2000)
+          } else {
+            return {
+              success: false,
+              requiresTwoFactor: true,
+              error: 'Two-factor authentication required',
+            }
           }
         }
+      } catch {
+        // No 2FA needed, continue
       }
 
       // Check for successful login
-      await page.waitForURL('**/home', { timeout: 15000 })
+      await page.waitForURL('**/home', { timeout: 10000 })
 
       // Save session
       const sessionManager = getSessionManager()
