@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createXAutomation } from '@/lib/browser'
 import prisma from '@/lib/prisma'
+import { validateAccountForAction } from '@/lib/utils/account-validator'
+import { handleApiError, AppError } from '@/lib/errors'
 
 const PostTweetSchema = z.object({
   accountId: z.string().min(1),
@@ -81,6 +83,9 @@ export async function POST(request: NextRequest) {
       case 'reply': {
         const data = PostReplySchema.parse(body)
 
+        // Validate account exists and is available
+        await validateAccountForAction(data.accountId)
+
         const xAutomation = createXAutomation(data.accountId)
         const result = await xAutomation.postReply(data.tweetUrl, data.content)
 
@@ -101,6 +106,9 @@ export async function POST(request: NextRequest) {
 
       case 'retweet': {
         const data = RetweetSchema.parse(body)
+
+        // Validate account exists and is available
+        await validateAccountForAction(data.accountId)
 
         const xAutomation = createXAutomation(data.accountId)
         const result = await xAutomation.retweet(data.tweetUrl, data.quote)
@@ -127,6 +135,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Post error:', error)
 
+    // Handle AppError (NotFoundError, ValidationError, etc.)
+    if (error instanceof AppError) {
+      const { statusCode, body } = handleApiError(error)
+      return NextResponse.json(body, { status: statusCode })
+    }
+
+    // Handle Zod validation errors
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { error: 'Validation error', details: error.errors },

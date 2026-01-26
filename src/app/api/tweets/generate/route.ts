@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { tweetGenerator, tweetQueue } from '@/lib/services'
 import prisma from '@/lib/prisma'
+import { safeJsonParse, DEFAULT_FALLBACKS } from '@/lib/utils/safe-json'
 import type { StyleProfile } from '@/types/ai'
 
 const GenerateTweetSchema = z.object({
@@ -41,11 +42,29 @@ export async function POST(request: NextRequest) {
       styleProfile = {
         id: dbProfile.id,
         accountId: dbProfile.accountId,
-        toneAnalysis: JSON.parse(dbProfile.toneAnalysis),
-        vocabularyStyle: JSON.parse(dbProfile.vocabularyStyle),
-        topicPreferences: JSON.parse(dbProfile.topicPreferences),
-        postingPatterns: JSON.parse(dbProfile.postingPatterns),
-        emojiUsage: dbProfile.emojiUsage ? JSON.parse(dbProfile.emojiUsage) : undefined,
+        toneAnalysis: safeJsonParse(
+          dbProfile.toneAnalysis,
+          DEFAULT_FALLBACKS.toneAnalysis,
+          'styleProfile.toneAnalysis'
+        ),
+        vocabularyStyle: safeJsonParse(
+          dbProfile.vocabularyStyle,
+          DEFAULT_FALLBACKS.vocabularyStyle,
+          'styleProfile.vocabularyStyle'
+        ),
+        topicPreferences: safeJsonParse(
+          dbProfile.topicPreferences,
+          DEFAULT_FALLBACKS.topicPreferences,
+          'styleProfile.topicPreferences'
+        ),
+        postingPatterns: safeJsonParse(
+          dbProfile.postingPatterns,
+          DEFAULT_FALLBACKS.postingPatterns,
+          'styleProfile.postingPatterns'
+        ),
+        emojiUsage: dbProfile.emojiUsage
+          ? safeJsonParse(dbProfile.emojiUsage, undefined, 'styleProfile.emojiUsage')
+          : undefined,
         analyzedTweets: dbProfile.analyzedTweets,
         lastAnalyzedAt: dbProfile.lastAnalyzedAt || undefined,
       }
