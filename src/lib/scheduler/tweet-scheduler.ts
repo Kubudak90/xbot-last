@@ -5,6 +5,7 @@
 import prisma from '@/lib/prisma'
 import { createXAutomation } from '@/lib/browser'
 import { humanBehavior } from '@/lib/services/human-behavior'
+import { schedulerLogger as logger } from '@/lib/logger'
 
 export interface ScheduledTweetData {
   id: string
@@ -32,12 +33,12 @@ export class TweetScheduler {
    */
   start(): void {
     if (this.isRunning) {
-      console.log('Scheduler is already running')
+      logger.warn('Scheduler is already running')
       return
     }
 
     this.isRunning = true
-    console.log('Tweet scheduler started')
+    logger.info('Tweet scheduler started', { intervalMs: this.CHECK_INTERVAL_MS })
 
     // Initial check
     this.processScheduledTweets()
@@ -63,7 +64,7 @@ export class TweetScheduler {
       this.checkInterval = null
     }
 
-    console.log('Tweet scheduler stopped')
+    logger.info('Tweet scheduler stopped')
   }
 
   /**
@@ -118,11 +119,11 @@ export class TweetScheduler {
         return newTweet
       })
 
-      console.log(`Scheduled tweet ${tweet.id} for ${scheduledFor.toISOString()}`)
+      logger.info('Tweet scheduled', { tweetId: tweet.id, scheduledFor: scheduledFor.toISOString() })
 
       return { success: true, tweetId: tweet.id }
     } catch (error) {
-      console.error('Error scheduling tweet:', error)
+      logger.error('Error scheduling tweet', error as Error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -190,7 +191,7 @@ export class TweetScheduler {
 
       return { success: true, tweetId: threadId }
     } catch (error) {
-      console.error('Error scheduling thread:', error)
+      logger.error('Error scheduling thread', error as Error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -229,7 +230,7 @@ export class TweetScheduler {
 
       return { success: true }
     } catch (error) {
-      console.error('Error cancelling tweet:', error)
+      logger.error('Error cancelling tweet', error as Error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -265,7 +266,7 @@ export class TweetScheduler {
 
       return { success: true }
     } catch (error) {
-      console.error('Error cancelling thread:', error)
+      logger.error('Error cancelling thread', error as Error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -302,7 +303,7 @@ export class TweetScheduler {
 
       return { success: true }
     } catch (error) {
-      console.error('Error rescheduling tweet:', error)
+      logger.error('Error rescheduling tweet', error as Error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -341,7 +342,7 @@ export class TweetScheduler {
 
       if (dueTasks.length === 0) return
 
-      console.log(`Processing ${dueTasks.length} scheduled tweets`)
+      logger.info('Processing scheduled tweets', { count: dueTasks.length })
 
       // Sort by thread position to ensure correct order
       const sortedTasks = dueTasks.sort((a, b) => {
@@ -355,7 +356,7 @@ export class TweetScheduler {
         await this.postScheduledTweet(task)
       }
     } catch (error) {
-      console.error('Error processing scheduled tweets:', error)
+      logger.error('Error processing scheduled tweets', error as Error)
     }
   }
 
@@ -390,7 +391,7 @@ export class TweetScheduler {
       // Check rate limits
       const rateCheck = humanBehavior.checkRateLimit('tweet')
       if (!rateCheck.allowed) {
-        console.log(`Rate limit hit, delaying tweet ${task.tweetId}. Wait time: ${rateCheck.waitTime}ms`)
+        logger.warn('Rate limit hit, delaying tweet', { tweetId: task.tweetId, waitTime: rateCheck.waitTime })
 
         // Reschedule for later
         const newTime = new Date(Date.now() + (rateCheck.waitTime || 60000))
@@ -488,7 +489,7 @@ export class TweetScheduler {
           },
         })
 
-        console.log(`Posted scheduled tweet ${task.tweetId}`)
+        logger.info('Posted scheduled tweet', { tweetId: task.tweetId })
       } else {
         await prisma.$transaction([
           prisma.scheduledTask.update({
@@ -508,10 +509,10 @@ export class TweetScheduler {
           }),
         ])
 
-        console.error(`Failed to post tweet ${task.tweetId}: ${result.error}`)
+        logger.error('Failed to post tweet', undefined, { tweetId: task.tweetId, error: result.error })
       }
     } catch (error) {
-      console.error(`Error posting scheduled tweet ${task.tweetId}:`, error)
+      logger.error('Error posting scheduled tweet', error as Error, { tweetId: task.tweetId })
 
       await prisma.$transaction([
         prisma.scheduledTask.update({

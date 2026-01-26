@@ -6,6 +6,8 @@ import { ClaudeProvider } from './claude-provider'
 import { GeminiProvider } from './gemini-provider'
 import { OllamaProvider } from './ollama-provider'
 import type { AIProviderType, GenerateRequest, GenerateResponse } from '@/types/ai'
+import { getCircuitBreaker, CircuitBreakerOpenError } from '@/lib/circuit-breaker'
+import { aiLogger as logger } from '@/lib/logger'
 
 export interface ProviderRegistration {
   type: AIProviderType
@@ -64,10 +66,19 @@ export class AIProviderManager {
       this.providers.set(type, provider)
       this.registrations.set(type, registration)
 
+      // Initialize circuit breaker for this provider
+      getCircuitBreaker(`ai-provider-${type}`, {
+        failureThreshold: 3,
+        timeout: 30000,
+        successThreshold: 2,
+      })
+
       // Initial health check
       this.checkProviderHealth(type)
+
+      logger.info(`Provider registered: ${type}`, { modelId: config.modelId, priority })
     } catch (error) {
-      console.error(`Failed to register provider ${type}:`, error)
+      logger.error(`Failed to register provider ${type}`, error)
     }
   }
 
@@ -138,11 +149,25 @@ export class AIProviderManager {
       const provider = this.providers.get(providerType)
       if (!provider) continue
 
+      const circuitBreaker = getCircuitBreaker(`ai-provider-${providerType}`)
+
+      // Skip if circuit is open
+      if (!circuitBreaker.canExecute()) {
+        logger.warn(`Skipping provider ${providerType}: circuit breaker open`)
+        attempts.push({
+          provider: providerType,
+          success: false,
+          error: 'Circuit breaker open',
+          latencyMs: 0,
+        })
+        continue
+      }
+
       for (let retry = 0; retry < this.config.maxRetries; retry++) {
         const start = Date.now()
 
         try {
-          const response = await provider.generate(request)
+          const response = await circuitBreaker.execute(() => provider.generate(request))
 
           attempts.push({
             provider: providerType,
@@ -150,9 +175,16 @@ export class AIProviderManager {
             latencyMs: Date.now() - start,
           })
 
+          logger.info(`Generation successful with ${providerType}`, {
+            provider: providerType,
+            latencyMs: Date.now() - start,
+            attempt: retry + 1,
+          })
+
           return { response, attempts }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+          const isCircuitBreakerError = error instanceof CircuitBreakerOpenError
 
           attempts.push({
             provider: providerType,
@@ -161,9 +193,20 @@ export class AIProviderManager {
             latencyMs: Date.now() - start,
           })
 
-          // Wait before retry
+          logger.warn(`Generation attempt failed`, {
+            provider: providerType,
+            attempt: retry + 1,
+            error: errorMessage,
+            isCircuitBreakerError,
+          })
+
+          // Don't retry if circuit breaker opened
+          if (isCircuitBreakerError) break
+
+          // Wait before retry with exponential backoff
           if (retry < this.config.maxRetries - 1) {
-            await this.delay(this.config.retryDelayMs * (retry + 1))
+            const delay = this.config.retryDelayMs * Math.pow(2, retry)
+            await this.delay(delay)
           }
         }
       }
@@ -263,8 +306,9 @@ export class AIProviderManager {
       try {
         const provider = this.createProvider(type, updated.config)
         this.providers.set(type, provider)
+        logger.info(`Provider updated: ${type}`)
       } catch (error) {
-        console.error(`Failed to update provider ${type}:`, error)
+        logger.error(`Failed to update provider ${type}`, error)
       }
     }
 
