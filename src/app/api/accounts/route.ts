@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import prisma from '@/lib/prisma'
+import { handleApiError, ValidationError } from '@/lib/errors'
+import { apiLogger as logger } from '@/lib/logger'
 
 // GET - List all accounts
 export async function GET() {
@@ -21,16 +23,16 @@ export async function GET() {
       },
     })
 
+    logger.info('Accounts fetched', { count: accounts.length })
+
     return NextResponse.json({
       success: true,
       data: accounts,
     })
   } catch (error) {
-    console.error('Failed to fetch accounts:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch accounts' },
-      { status: 500 }
-    )
+    logger.error('Failed to fetch accounts', error as Error)
+    const { statusCode, body } = handleApiError(error)
+    return NextResponse.json(body, { status: statusCode })
   }
 }
 
@@ -52,10 +54,9 @@ export async function POST(request: NextRequest) {
     })
 
     if (existing) {
-      return NextResponse.json(
-        { error: 'Account with this username already exists' },
-        { status: 409 }
-      )
+      throw new ValidationError('Account with this username already exists', [
+        { field: 'username', message: 'Username already taken' },
+      ])
     }
 
     const account = await prisma.account.create({
@@ -68,24 +69,16 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    logger.info('Account created', { accountId: account.id, username: account.username })
+
     return NextResponse.json({
       success: true,
       data: account,
     })
   } catch (error) {
-    console.error('Failed to create account:', error)
-
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to create account' },
-      { status: 500 }
-    )
+    logger.error('Failed to create account', error as Error)
+    const { statusCode, body } = handleApiError(error)
+    return NextResponse.json(body, { status: statusCode })
   }
 }
 
@@ -96,25 +89,24 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json(
-        { error: 'Account ID is required' },
-        { status: 400 }
-      )
+      throw new ValidationError('Account ID is required', [
+        { field: 'id', message: 'Required query parameter' },
+      ])
     }
 
     await prisma.account.delete({
       where: { id },
     })
 
+    logger.info('Account deleted', { accountId: id })
+
     return NextResponse.json({
       success: true,
       message: 'Account deleted',
     })
   } catch (error) {
-    console.error('Failed to delete account:', error)
-    return NextResponse.json(
-      { error: 'Failed to delete account' },
-      { status: 500 }
-    )
+    logger.error('Failed to delete account', error as Error)
+    const { statusCode, body } = handleApiError(error)
+    return NextResponse.json(body, { status: statusCode })
   }
 }
