@@ -1,0 +1,847 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "XBot API",
+    "description": "AI-powered X (Twitter) Automation Platform API",
+    "version": "1.0.0",
+    "contact": {
+      "name": "XBot Support"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Development server"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyHeader": []
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "healthy" },
+                    "timestamp": { "type": "string", "format": "date-time" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/accounts": {
+      "get": {
+        "tags": ["Accounts"],
+        "summary": "List all accounts",
+        "responses": {
+          "200": {
+            "description": "List of accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountListResponse"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Create new account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "delete": {
+        "tags": ["Accounts"],
+        "summary": "Delete account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Account ID to delete"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/accounts/login-cookie": {
+      "post": {
+        "tags": ["Accounts"],
+        "summary": "Login with cookies",
+        "description": "Authenticate account using X auth_token and ct0 cookies",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CookieLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/ai/generate": {
+      "post": {
+        "tags": ["AI"],
+        "summary": "Generate tweet with AI",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated tweet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "503": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/api/ai/reply": {
+      "post": {
+        "tags": ["AI"],
+        "summary": "Generate reply tweet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/providers": {
+      "get": {
+        "tags": ["AI"],
+        "summary": "List AI providers",
+        "responses": {
+          "200": {
+            "description": "List of available providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvidersResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browser/post": {
+      "post": {
+        "tags": ["Browser"],
+        "summary": "Post tweet via browser automation",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserPostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tweet posted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostResponse"
+                }
+              }
+            }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/api/browser/scrape": {
+      "post": {
+        "tags": ["Browser"],
+        "summary": "Scrape tweets or profile",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScrapeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Scraped data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScrapeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scheduler/schedule": {
+      "get": {
+        "tags": ["Scheduler"],
+        "summary": "Get upcoming scheduled tweets",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "schema": { "type": "string" },
+            "description": "Filter by account ID"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 10 },
+            "description": "Max results"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scheduled tweets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledTweetsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Scheduler"],
+        "summary": "Schedule tweet or thread",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tweet scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/style/analyze": {
+      "post": {
+        "tags": ["Style"],
+        "summary": "Analyze user's writing style",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StyleAnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Style analysis result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StyleAnalyzeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/stats": {
+      "get": {
+        "tags": ["Analytics"],
+        "summary": "Get account statistics",
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tweets/generate": {
+      "post": {
+        "tags": ["Tweets"],
+        "summary": "Generate tweet with advanced options",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TweetGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated tweet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TweetGenerateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tweets/thread": {
+      "post": {
+        "tags": ["Tweets"],
+        "summary": "Generate thread",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadGenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadGenerateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "API key for authentication"
+      },
+      "ApiKeyQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "api_key",
+        "description": "API key as query parameter"
+      }
+    },
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "username": { "type": "string" },
+          "displayName": { "type": "string", "nullable": true },
+          "bio": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "inactive", "suspended"] },
+          "isActive": { "type": "boolean" },
+          "lastActiveAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AccountListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Account" }
+          }
+        }
+      },
+      "AccountResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/Account" }
+        }
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "required": ["username"],
+        "properties": {
+          "username": { "type": "string", "minLength": 1, "maxLength": 50 },
+          "displayName": { "type": "string" },
+          "bio": { "type": "string" }
+        }
+      },
+      "CookieLoginRequest": {
+        "type": "object",
+        "required": ["username", "authToken", "ct0"],
+        "properties": {
+          "username": { "type": "string" },
+          "authToken": { "type": "string", "description": "X auth_token cookie" },
+          "ct0": { "type": "string", "description": "X ct0 cookie (CSRF token)" }
+        }
+      },
+      "GenerateRequest": {
+        "type": "object",
+        "required": ["accountId"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["original", "reaction", "question", "tip", "thread-start", "promotional", "personal", "humor"]
+          },
+          "topic": { "type": "string" },
+          "context": { "type": "string" },
+          "maxLength": { "type": "integer", "default": 280 },
+          "useStyle": { "type": "boolean", "default": true }
+        }
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "content": { "type": "string" },
+              "type": { "type": "string" },
+              "provider": { "type": "string" },
+              "styleScore": { "type": "number" }
+            }
+          }
+        }
+      },
+      "ReplyRequest": {
+        "type": "object",
+        "required": ["accountId", "tweetUrl"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "tweetUrl": { "type": "string", "format": "uri" },
+          "tone": { "type": "string" },
+          "context": { "type": "string" }
+        }
+      },
+      "ProvidersResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string" },
+                "isHealthy": { "type": "boolean" },
+                "priority": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "BrowserPostRequest": {
+        "type": "object",
+        "required": ["accountId", "action"],
+        "properties": {
+          "action": { "type": "string", "enum": ["tweet", "reply", "retweet"] },
+          "accountId": { "type": "string" },
+          "content": { "type": "string", "maxLength": 280 },
+          "tweetUrl": { "type": "string", "format": "uri" },
+          "mediaUrls": {
+            "type": "array",
+            "items": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+      "PostResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "tweetId": { "type": "string" },
+          "tweetUrl": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "ScrapeRequest": {
+        "type": "object",
+        "required": ["accountId", "target"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "target": { "type": "string", "enum": ["tweets", "profile", "likes", "retweets"] },
+          "username": { "type": "string" },
+          "limit": { "type": "integer", "default": 20 }
+        }
+      },
+      "ScrapeResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "type": "object" }
+        }
+      },
+      "ScheduleRequest": {
+        "type": "object",
+        "required": ["action", "accountId"],
+        "properties": {
+          "action": { "type": "string", "enum": ["schedule", "scheduleThread", "cancel", "reschedule"] },
+          "accountId": { "type": "string" },
+          "content": { "type": "string" },
+          "scheduledFor": { "type": "string", "format": "date-time" },
+          "tweets": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "tweetId": { "type": "string" },
+          "intervalMinutes": { "type": "integer", "default": 1 }
+        }
+      },
+      "ScheduleResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "tweetId": { "type": "string" },
+          "error": { "type": "string" }
+        }
+      },
+      "ScheduledTweetsResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "content": { "type": "string" },
+                "scheduledFor": { "type": "string", "format": "date-time" }
+              }
+            }
+          }
+        }
+      },
+      "StyleAnalyzeRequest": {
+        "type": "object",
+        "required": ["accountId"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "sampleSize": { "type": "integer", "default": 50 }
+        }
+      },
+      "StyleAnalyzeResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "toneAnalysis": { "type": "object" },
+              "vocabularyStyle": { "type": "object" },
+              "topicPreferences": { "type": "array" }
+            }
+          }
+        }
+      },
+      "StatsResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "totalTweets": { "type": "integer" },
+              "totalScheduled": { "type": "integer" },
+              "totalGenerated": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "TweetGenerateRequest": {
+        "type": "object",
+        "required": ["accountId"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "type": { "type": "string" },
+          "topic": { "type": "string" },
+          "schedule": { "type": "boolean" },
+          "scheduledFor": { "type": "string", "format": "date-time" }
+        }
+      },
+      "TweetGenerateResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "content": { "type": "string" },
+              "tweetId": { "type": "string" },
+              "scheduled": { "type": "boolean" }
+            }
+          }
+        }
+      },
+      "ThreadGenerateRequest": {
+        "type": "object",
+        "required": ["accountId", "topic"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "topic": { "type": "string" },
+          "tweetCount": { "type": "integer", "minimum": 2, "maximum": 25, "default": 5 }
+        }
+      },
+      "ThreadGenerateResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "tweets": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "threadId": { "type": "string" }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": { "type": "array" },
+              "timestamp": { "type": "string", "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Authentication required",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "AUTHENTICATION_ERROR",
+                "message": "Valid API key required",
+                "timestamp": "2026-01-26T12:00:00Z"
+              }
+            }
+          }
+        }
+      },
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed",
+                "details": [{ "field": "username", "message": "Required" }],
+                "timestamp": "2026-01-26T12:00:00Z"
+              }
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Rate limit exceeded",
+        "headers": {
+          "Retry-After": {
+            "schema": { "type": "integer" },
+            "description": "Seconds until retry allowed"
+          },
+          "X-RateLimit-Remaining": {
+            "schema": { "type": "integer" },
+            "description": "Remaining requests in window"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Rate limit exceeded. Try again in 30 seconds.",
+                "retryAfter": 30,
+                "timestamp": "2026-01-26T12:00:00Z"
+              }
+            }
+          }
+        }
+      },
+      "ProviderError": {
+        "description": "AI provider unavailable",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": {
+                "code": "PROVIDER_ERROR",
+                "message": "AI provider temporarily unavailable",
+                "timestamp": "2026-01-26T12:00:00Z"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Health", "description": "Health check endpoints" },
+    { "name": "Accounts", "description": "Account management" },
+    { "name": "AI", "description": "AI generation endpoints" },
+    { "name": "Browser", "description": "Browser automation" },
+    { "name": "Scheduler", "description": "Tweet scheduling" },
+    { "name": "Style", "description": "Style analysis" },
+    { "name": "Analytics", "description": "Analytics and statistics" },
+    { "name": "Tweets", "description": "Tweet generation and management" }
+  ]
+}
