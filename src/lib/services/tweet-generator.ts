@@ -514,6 +514,7 @@ Example:
 
   /**
    * Parse thread response into individual tweets
+   * Supports multiple formats: "1/5 content", "[1] content", "Tweet 1: content", "1. content"
    */
   private parseThreadResponse(
     response: string,
@@ -522,56 +523,132 @@ Example:
     provider: AIProviderType,
     modelId: string
   ): GeneratedTweet[] {
-    const tweets: GeneratedTweet[] = []
+    const createTweet = (content: string, index: number): GeneratedTweet => ({
+      content: this.truncateTweet(content),
+      type: index === 0 ? 'thread-start' : 'original',
+      characterCount: content.length,
+      hashtags: this.extractHashtags(content),
+      mentions: this.extractMentions(content),
+      hasEmoji: this.hasEmoji(content),
+      styleScore: 0.75,
+      metadata: {
+        provider,
+        modelId,
+        generatedAt: new Date(),
+        latencyMs: 0,
+      },
+    })
 
-    // Split by tweet numbers
-    const tweetPattern = /(\d+)\/\d+\s*(.*?)(?=\d+\/\d+|$)/gs
-    let match
+    // Try multiple parsing patterns
+    const patterns = [
+      // Format: "1/5 content" or "1/5: content" (most common)
+      /(?:^|\n)\s*(\d+)\/\d+[:\s]+(.+?)(?=\n\s*\d+\/\d+|$)/gs,
+      // Format: "[1] content" or "(1) content"
+      /(?:^|\n)\s*[\[(](\d+)[\])][:\s]*(.+?)(?=\n\s*[\[(]\d+|$)/gs,
+      // Format: "Tweet 1: content" or "Tweet 1 - content"
+      /(?:^|\n)\s*Tweet\s+(\d+)[:\-\s]+(.+?)(?=\nTweet\s+\d+|$)/gis,
+      // Format: "1. content"
+      /(?:^|\n)\s*(\d+)\.\s+(.+?)(?=\n\s*\d+\.|$)/gs,
+    ]
 
-    while ((match = tweetPattern.exec(response)) !== null) {
-      const content = match[2].trim()
+    for (const pattern of patterns) {
+      const tweets: GeneratedTweet[] = []
+      let match
 
-      if (content) {
-        tweets.push({
-          content: this.truncateTweet(content),
-          type: tweets.length === 0 ? 'thread-start' : 'original',
-          characterCount: content.length,
-          hashtags: this.extractHashtags(content),
-          mentions: this.extractMentions(content),
-          hasEmoji: this.hasEmoji(content),
-          styleScore: 0.75,
-          metadata: {
-            provider,
-            modelId,
-            generatedAt: new Date(),
-            latencyMs: 0,
-          },
-        })
+      // Reset lastIndex for each pattern
+      pattern.lastIndex = 0
+
+      while ((match = pattern.exec(response)) !== null) {
+        const content = match[2].trim()
+        // Validate content: not empty and reasonable length
+        if (content && content.length > 5 && content.length <= 280) {
+          tweets.push(createTweet(content, tweets.length))
+        }
+      }
+
+      // If we found at least 2 tweets, use this pattern's results
+      if (tweets.length >= 2) {
+        return tweets.slice(0, expectedCount)
       }
     }
 
-    // If parsing failed, try line-by-line
-    if (tweets.length === 0) {
-      const lines = response.split('\n').filter(l => l.trim().length > 10)
+    // Fallback: Try line-by-line parsing
+    const lines = response
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 10 && line.length <= 280)
+      // Remove lines that are just numbers or metadata
+      .filter(line => !/^[\d\/\.\[\]():\-\s]+$/.test(line))
 
-      for (const line of lines.slice(0, expectedCount)) {
-        const content = line.replace(/^\d+[./)]\s*/, '').trim()
-        tweets.push({
-          content: this.truncateTweet(content),
-          type: tweets.length === 0 ? 'thread-start' : 'original',
-          characterCount: content.length,
-          hashtags: this.extractHashtags(content),
-          mentions: this.extractMentions(content),
-          hasEmoji: this.hasEmoji(content),
-          styleScore: 0.7,
-          metadata: {
-            provider,
-            modelId,
-            generatedAt: new Date(),
-            latencyMs: 0,
-          },
-        })
+    if (lines.length >= 2) {
+      return lines.slice(0, expectedCount).map((line, index) => {
+        // Remove common prefixes
+        const content = line
+          .replace(/^\d+[.\/)\]]\s*/, '')
+          .replace(/^[\[(]\d+[\])][:\s]*/, '')
+          .replace(/^Tweet\s+\d+[:\-\s]*/i, '')
+          .trim()
+        return createTweet(content || line, index)
+      })
+    }
+
+    // Last resort: Split long text into sentences
+    return this.splitIntoTweets(response, expectedCount, provider, modelId)
+  }
+
+  /**
+   * Split a long text into tweet-sized chunks
+   */
+  private splitIntoTweets(
+    text: string,
+    count: number,
+    provider: AIProviderType,
+    modelId: string
+  ): GeneratedTweet[] {
+    const tweets: GeneratedTweet[] = []
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0)
+
+    let currentTweet = ''
+
+    for (const sentence of sentences) {
+      const trimmed = sentence.trim()
+      if (!trimmed) continue
+
+      const potential = currentTweet ? currentTweet + '. ' + trimmed : trimmed
+
+      if (potential.length <= 270) {
+        currentTweet = potential
+      } else {
+        if (currentTweet) {
+          tweets.push({
+            content: this.truncateTweet(currentTweet + '.'),
+            type: tweets.length === 0 ? 'thread-start' : 'original',
+            characterCount: currentTweet.length + 1,
+            hashtags: this.extractHashtags(currentTweet),
+            mentions: this.extractMentions(currentTweet),
+            hasEmoji: this.hasEmoji(currentTweet),
+            styleScore: 0.6,
+            metadata: { provider, modelId, generatedAt: new Date(), latencyMs: 0 },
+          })
+        }
+        currentTweet = trimmed
       }
+
+      if (tweets.length >= count) break
+    }
+
+    // Add remaining content
+    if (currentTweet && tweets.length < count) {
+      tweets.push({
+        content: this.truncateTweet(currentTweet + '.'),
+        type: tweets.length === 0 ? 'thread-start' : 'original',
+        characterCount: currentTweet.length + 1,
+        hashtags: this.extractHashtags(currentTweet),
+        mentions: this.extractMentions(currentTweet),
+        hasEmoji: this.hasEmoji(currentTweet),
+        styleScore: 0.6,
+        metadata: { provider, modelId, generatedAt: new Date(), latencyMs: 0 },
+      })
     }
 
     return tweets

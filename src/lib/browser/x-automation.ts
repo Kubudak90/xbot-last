@@ -4,6 +4,8 @@
 import { Page } from 'playwright'
 import { getSessionManager } from './session-manager'
 import { humanBehavior } from '@/lib/services/human-behavior'
+import { findElement, clickElement, elementExists } from './selectors'
+import { logger } from '@/lib/logger'
 
 export interface LoginCredentials {
   username: string
@@ -95,6 +97,37 @@ export class XAutomation {
       if (Math.random() < 0.1) {
         await this.humanDelay(200, 500)
       }
+    }
+  }
+
+  /**
+   * Extract tweet content from the current page
+   * Used for calculating accurate reading time
+   */
+  private async extractTweetContent(page: Page): Promise<string | null> {
+    try {
+      const tweetTextSelectors = [
+        '[data-testid="tweetText"]',
+        'article [data-testid="tweetText"]',
+        '[data-testid="tweet"] div[lang]',
+      ]
+
+      for (const selector of tweetTextSelectors) {
+        const element = await page.$(selector)
+        if (element) {
+          const content = await element.textContent()
+          if (content && content.trim().length > 0) {
+            return content.trim()
+          }
+        }
+      }
+
+      return null
+    } catch (error) {
+      logger.debug('Could not extract tweet content', {
+        error: error instanceof Error ? error.message : 'Unknown',
+      })
+      return null
     }
   }
 
@@ -208,31 +241,44 @@ export class XAutomation {
       await page.goto('https://x.com/home', { waitUntil: 'networkidle' })
       await this.humanDelay(1000, 2000)
 
-      // Click compose button
-      const composeButton = '[data-testid="SideNav_NewTweet_Button"]'
-      await page.waitForSelector(composeButton, { timeout: 10000 })
-      await page.click(composeButton)
+      // Click compose button (with fallback selectors)
+      const composeBtn = await findElement(page, 'composeButton', { timeout: 10000 })
+      if (!composeBtn) {
+        return { success: false, error: 'Could not find compose button' }
+      }
+      await composeBtn.click()
       await this.humanDelay(1000, 2000)
 
-      // Wait for compose modal
-      const tweetInput = '[data-testid="tweetTextarea_0"]'
-      await page.waitForSelector(tweetInput, { timeout: 10000 })
+      // Wait for compose modal (with fallback selectors)
+      const tweetInputEl = await findElement(page, 'tweetInput', { timeout: 10000 })
+      if (!tweetInputEl) {
+        return { success: false, error: 'Could not find tweet input' }
+      }
 
       // Type tweet content with simulated typing time
       const typingTime = humanBehavior.getTypingTime(content)
-      await this.humanType(page, tweetInput, content)
-      await this.humanDelay(typingTime * 0.1, typingTime * 0.2) // Additional thinking time
+      await tweetInputEl.click()
+      await this.humanDelay(200, 500)
+      for (const char of content) {
+        await page.keyboard.type(char, { delay: 50 + Math.random() * 100 })
+        if (Math.random() < 0.1) {
+          await this.humanDelay(200, 500)
+        }
+      }
+      await this.humanDelay(typingTime * 0.1, typingTime * 0.2)
 
       // Upload media if provided
       if (mediaUrls && mediaUrls.length > 0) {
-        // TODO: Implement media upload
-        console.log('Media upload not yet implemented')
+        logger.info('Media upload not yet implemented', { mediaCount: mediaUrls.length })
       }
 
-      // Click tweet button
+      // Click tweet button (with fallback selectors)
       await this.humanDelay(500, 1500)
-      const tweetButton = '[data-testid="tweetButton"]'
-      await page.click(tweetButton)
+      const submitBtn = await findElement(page, 'tweetButton', { timeout: 5000 })
+      if (!submitBtn) {
+        return { success: false, error: 'Could not find tweet submit button' }
+      }
+      await submitBtn.click()
 
       // Wait for tweet to be posted
       await this.humanDelay(2000, 4000)
@@ -304,25 +350,42 @@ export class XAutomation {
       await page.goto(tweetUrl, { waitUntil: 'networkidle' })
       await this.humanDelay(1500, 3000)
 
-      // Read tweet (human behavior)
-      const readingTime = humanBehavior.getReadingTime(content)
+      // Extract original tweet content for reading time calculation
+      const originalTweetContent = await this.extractTweetContent(page)
+
+      // Read original tweet (human behavior) - use original tweet content, not reply content
+      const readingTime = humanBehavior.getReadingTime(originalTweetContent || content)
       await this.humanDelay(readingTime * 0.5, readingTime)
 
-      // Click reply button
-      const replyButton = '[data-testid="reply"]'
-      await page.waitForSelector(replyButton, { timeout: 10000 })
-      await page.click(replyButton)
+      // Click reply button (with fallback selectors)
+      const replyBtn = await findElement(page, 'replyButton', { timeout: 10000 })
+      if (!replyBtn) {
+        return { success: false, error: 'Could not find reply button' }
+      }
+      await replyBtn.click()
       await this.humanDelay(1000, 2000)
 
-      // Type reply
-      const replyInput = '[data-testid="tweetTextarea_0"]'
-      await page.waitForSelector(replyInput, { timeout: 10000 })
-      await this.humanType(page, replyInput, content)
+      // Type reply (with fallback selectors)
+      const replyInputEl = await findElement(page, 'tweetInput', { timeout: 10000 })
+      if (!replyInputEl) {
+        return { success: false, error: 'Could not find reply input' }
+      }
+      await replyInputEl.click()
+      await this.humanDelay(200, 500)
+      for (const char of content) {
+        await page.keyboard.type(char, { delay: 50 + Math.random() * 100 })
+        if (Math.random() < 0.1) {
+          await this.humanDelay(200, 500)
+        }
+      }
       await this.humanDelay(500, 1500)
 
-      // Submit reply
-      const submitButton = '[data-testid="tweetButton"]'
-      await page.click(submitButton)
+      // Submit reply (with fallback selectors)
+      const submitBtn = await findElement(page, 'tweetButton', { timeout: 5000 })
+      if (!submitBtn) {
+        return { success: false, error: 'Could not find submit button' }
+      }
+      await submitBtn.click()
       await this.humanDelay(2000, 4000)
 
       // Record action
