@@ -360,8 +360,10 @@ export class AIProviderManager {
   }
 }
 
-// Singleton instance
+// Singleton instance with race condition protection
 let managerInstance: AIProviderManager | null = null
+let isInitialized = false
+let initializationLock: Promise<AIProviderManager> | null = null
 
 export function getAIProviderManager(config?: Partial<ManagerConfig>): AIProviderManager {
   if (!managerInstance) {
@@ -370,8 +372,60 @@ export function getAIProviderManager(config?: Partial<ManagerConfig>): AIProvide
   return managerInstance
 }
 
+/**
+ * Get or create provider manager with async initialization lock
+ * Use this when initialization might happen concurrently
+ */
+export async function getAIProviderManagerAsync(config?: Partial<ManagerConfig>): Promise<AIProviderManager> {
+  if (managerInstance) {
+    return managerInstance
+  }
+
+  // If initialization is in progress, wait for it
+  if (initializationLock) {
+    return initializationLock
+  }
+
+  // Create initialization promise to prevent concurrent creation
+  initializationLock = Promise.resolve().then(() => {
+    if (!managerInstance) {
+      managerInstance = new AIProviderManager(config)
+    }
+    return managerInstance
+  })
+
+  try {
+    return await initializationLock
+  } finally {
+    initializationLock = null
+  }
+}
+
+/**
+ * Reset the provider manager (for testing)
+ */
+export function resetProviderManager(): void {
+  managerInstance = null
+  isInitialized = false
+  initializationLock = null
+}
+
+/**
+ * Check if providers have been initialized
+ */
+export function isProvidersInitialized(): boolean {
+  return isInitialized
+}
+
 export function initializeProviders(): AIProviderManager {
   const manager = getAIProviderManager()
+
+  // Prevent re-initialization which could cause duplicate registrations
+  if (isInitialized) {
+    logger.debug('Provider manager already initialized, skipping re-initialization')
+    return manager
+  }
+  isInitialized = true
 
   // Register OpenAI if configured
   if (process.env.OPENAI_API_KEY) {

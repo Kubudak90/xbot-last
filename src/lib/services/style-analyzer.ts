@@ -558,6 +558,7 @@ export class StyleAnalyzerService {
 
   /**
    * Calculate how human-like the posting pattern is
+   * Handles edge cases like single tweet accounts
    */
   private calculateHumanScore(
     tweets: AnalyzableTweet[],
@@ -565,7 +566,29 @@ export class StyleAnalyzerService {
   ): number {
     let score = 0.5 // Base score
 
-    // Humans don't post at perfectly regular intervals
+    // Handle edge case: single tweet or no tweets
+    if (tweets.length <= 1) {
+      // For single tweet, analyze content characteristics instead
+      if (tweets.length === 1) {
+        const tweet = tweets[0]
+        // Natural tweet length (not too short, not max length)
+        if (tweet.content.length > 30 && tweet.content.length < 250) {
+          score += 0.1
+        }
+        // Has natural punctuation
+        if (this.hasNaturalPunctuation(tweet.content)) {
+          score += 0.1
+        }
+        // Has varied word lengths (not repetitive)
+        if (this.hasVariedWordLengths(tweet.content)) {
+          score += 0.1
+        }
+      }
+      // Clamp score for limited data scenarios
+      return Math.min(Math.max(score, 0.3), 0.7)
+    }
+
+    // Multiple tweets: analyze posting patterns
     const intervals: number[] = []
     const sortedTweets = [...tweets].sort((a, b) =>
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -582,11 +605,16 @@ export class StyleAnalyzerService {
       const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length
       const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length
       const stdDev = Math.sqrt(variance)
-      const coefficientOfVariation = stdDev / avgInterval
+      const coefficientOfVariation = avgInterval > 0 ? stdDev / avgInterval : 0
 
       // High CV = more human-like
       if (coefficientOfVariation > 1) score += 0.2
       else if (coefficientOfVariation > 0.5) score += 0.1
+
+      // Very low CV (< 0.1) suggests bot-like regularity
+      if (coefficientOfVariation < 0.1 && intervals.length > 3) {
+        score -= 0.1
+      }
     }
 
     // Humans don't typically tweet 24/7
@@ -595,12 +623,13 @@ export class StyleAnalyzerService {
 
     // Humans have varying tweet lengths
     const lengths = tweets.map(t => t.content.length)
-    if (lengths.length > 0) {
+    if (lengths.length > 1) {
       const avgLength = lengths.reduce((a, b) => a + b, 0) / lengths.length
       const lengthVariance = lengths.reduce((sum, l) => sum + Math.pow(l - avgLength, 2), 0) / lengths.length
       const lengthStdDev = Math.sqrt(lengthVariance)
 
       if (lengthStdDev > 50) score += 0.1
+      else if (lengthStdDev > 20) score += 0.05
     }
 
     // Natural posting frequency
@@ -608,7 +637,29 @@ export class StyleAnalyzerService {
       score += 0.1
     }
 
-    return Math.min(Math.round(score * 100) / 100, 1)
+    return Math.min(Math.max(Math.round(score * 100) / 100, 0), 1)
+  }
+
+  /**
+   * Check if text has natural punctuation patterns
+   */
+  private hasNaturalPunctuation(text: string): boolean {
+    const punctuationCount = (text.match(/[.!?,;:]/g) || []).length
+    const wordCount = text.split(/\s+/).filter(w => w.length > 0).length
+    // Natural ratio: some punctuation, but not excessive
+    return punctuationCount > 0 && wordCount > 0 && punctuationCount / wordCount < 0.5
+  }
+
+  /**
+   * Check if text has varied word lengths (not repetitive)
+   */
+  private hasVariedWordLengths(text: string): boolean {
+    const words = text.split(/\s+/).filter(w => w.length > 0)
+    if (words.length < 3) return true // Too short to judge
+    const lengths = words.map(w => w.replace(/[^a-zA-Z]/g, '').length)
+    const uniqueLengths = new Set(lengths.filter(l => l > 0))
+    // Natural text has varied word lengths
+    return uniqueLengths.size >= Math.min(4, Math.ceil(words.length * 0.3))
   }
 
   private getDefaultTone(): ToneAnalysis {

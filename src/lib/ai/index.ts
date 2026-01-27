@@ -11,7 +11,10 @@ export { OllamaProvider } from './ollama-provider'
 export {
   AIProviderManager,
   getAIProviderManager,
+  getAIProviderManagerAsync,
   initializeProviders,
+  resetProviderManager,
+  isProvidersInitialized,
 } from './provider-manager'
 
 export type {

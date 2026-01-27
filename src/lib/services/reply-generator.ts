@@ -3,6 +3,7 @@
 
 import { getAIProviderManager, initializeProviders } from '@/lib/ai'
 import type { StyleProfile, AIProviderType } from '@/types/ai'
+import { logger } from '@/lib/logger'
 
 export interface TweetContext {
   id: string
@@ -541,8 +542,12 @@ YOUR REPLY SHOULD:
         })
 
         alternatives.push(this.cleanResponse(result.response.content))
-      } catch {
-        // Skip failed alternatives
+      } catch (error) {
+        logger.debug('Failed to generate reply alternative', {
+          tweetId: tweet.id,
+          tone: tones[i],
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
     }
 

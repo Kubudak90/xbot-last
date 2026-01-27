@@ -5,6 +5,7 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright'
 import prisma from '@/lib/prisma'
 import crypto from 'crypto'
+import { logger } from '@/lib/logger'
 
 export interface SessionConfig {
   headless: boolean
@@ -127,8 +128,12 @@ export class SessionManager {
       try {
         await page.evaluate(() => true)
         return { context, page }
-      } catch {
+      } catch (error) {
         // Page is invalid, need to recreate
+        logger.debug('Page validation failed, recreating session', {
+          accountId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
         await this.closeSession(accountId)
       }
     }
@@ -236,8 +241,10 @@ export class SessionManager {
           }
           return items
         })
-      } catch {
-        // Page might be on about:blank
+      } catch (error) {
+        logger.debug('Could not retrieve localStorage, page might be on about:blank', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
 
       // Get current viewport and userAgent
@@ -277,8 +284,11 @@ export class SessionManager {
     if (page) {
       try {
         await page.close()
-      } catch {
-        // Page might already be closed
+      } catch (error) {
+        logger.debug('Page close failed, may already be closed', {
+          accountId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
       this.pages.delete(accountId)
     }
@@ -286,8 +296,11 @@ export class SessionManager {
     if (context) {
       try {
         await context.close()
-      } catch {
-        // Context might already be closed
+      } catch (error) {
+        logger.debug('Context close failed, may already be closed', {
+          accountId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
       this.contexts.delete(accountId)
     }
@@ -306,16 +319,20 @@ export class SessionManager {
     for (const page of this.pages.values()) {
       try {
         await page.close()
-      } catch {
-        // Ignore
+      } catch (error) {
+        logger.debug('Page close during shutdown failed', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
     }
 
     for (const context of this.contexts.values()) {
       try {
         await context.close()
-      } catch {
-        // Ignore
+      } catch (error) {
+        logger.debug('Context close during shutdown failed', {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
     }
 
@@ -355,7 +372,11 @@ export class SessionManager {
       })
 
       return isLoggedIn
-    } catch {
+    } catch (error) {
+      logger.debug('Login check failed', {
+        accountId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return false
     }
   }
@@ -442,7 +463,11 @@ export class SessionManager {
         userAgent: data.userAgent,
         viewport: data.viewport,
       }
-    } catch {
+    } catch (error) {
+      logger.debug('Failed to load session state', {
+        accountId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return null
     }
   }

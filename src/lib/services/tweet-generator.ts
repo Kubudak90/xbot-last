@@ -4,6 +4,7 @@
 import { getAIProviderManager, initializeProviders } from '@/lib/ai'
 import { humanBehavior } from './human-behavior'
 import type { StyleProfile, AIProviderType } from '@/types/ai'
+import { logger } from '@/lib/logger'
 
 export type TweetType =
   | 'original'      // Original thought/opinion
@@ -238,7 +239,8 @@ export class TweetGeneratorService {
       )
 
       const totalCharacters = tweets.reduce((sum, t) => sum + t.characterCount, 0)
-      const estimatedReadTime = Math.ceil(totalCharacters / 200) // ~200 chars per second reading
+      // Average reading speed: 250 WPM, ~5 chars/word = 1250 chars/min = ~21 chars/sec
+      const estimatedReadTime = Math.ceil(totalCharacters / 21) // ~21 chars per second reading
 
       return {
         tweets,
@@ -295,8 +297,11 @@ Respond with ONLY the JSON array.`
       const result = await manager.generate({ prompt, styleProfile })
       const ideas = JSON.parse(result.response.content)
       return ideas.slice(0, count)
-    } catch {
-      // Return empty array if parsing fails
+    } catch (error) {
+      logger.debug('Failed to generate tweet ideas', {
+        count,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return []
     }
   }
@@ -340,7 +345,11 @@ Respond with ONLY the JSON.`
     try {
       const result = await manager.generate({ prompt, styleProfile })
       return JSON.parse(result.response.content)
-    } catch {
+    } catch (error) {
+      logger.debug('Failed to improve tweet', {
+        originalLength: originalTweet.length,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return { improved: originalTweet, changes: [] }
     }
   }
@@ -655,37 +664,64 @@ Example:
   }
 
   /**
-   * Generate alternative versions
+   * Generate alternative versions in parallel for better performance
    */
   private async generateAlternatives(
     options: TweetGenerationOptions,
     styleProfile: StyleProfile | undefined,
     count: number
   ): Promise<string[]> {
-    const alternatives: string[] = []
     const manager = getAIProviderManager()
 
-    for (let i = 0; i < count; i++) {
-      try {
-        const result = await manager.generate({
-          prompt: this.buildTweetPrompt(options, styleProfile),
-          styleProfile,
-          options: {
-            maxLength: options.maxLength || 280,
-            temperature: 0.9 + (i * 0.1), // Slightly more creative each time
-          },
-        })
+    // Create promises for parallel execution
+    const promises = Array.from({ length: count }, (_, i) =>
+      this.generateSingleAlternative(manager, options, styleProfile, i)
+    )
 
-        const content = this.postProcessTweet(result.response.content, options)
-        if (!alternatives.includes(content)) {
-          alternatives.push(content)
+    // Execute all in parallel and collect results
+    const results = await Promise.allSettled(promises)
+
+    // Filter successful results and remove duplicates
+    const alternatives: string[] = []
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        if (!alternatives.includes(result.value)) {
+          alternatives.push(result.value)
         }
-      } catch {
-        // Skip failed alternatives
       }
     }
 
     return alternatives
+  }
+
+  /**
+   * Generate a single alternative tweet
+   */
+  private async generateSingleAlternative(
+    manager: ReturnType<typeof getAIProviderManager>,
+    options: TweetGenerationOptions,
+    styleProfile: StyleProfile | undefined,
+    index: number
+  ): Promise<string | null> {
+    try {
+      const result = await manager.generate({
+        prompt: this.buildTweetPrompt(options, styleProfile),
+        styleProfile,
+        options: {
+          maxLength: options.maxLength || 280,
+          temperature: 0.9 + (index * 0.1), // Slightly more creative each time
+        },
+      })
+
+      return this.postProcessTweet(result.response.content, options)
+    } catch (error) {
+      logger.debug('Failed to generate alternative tweet', {
+        index,
+        topic: options.topic,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
+      return null
+    }
   }
 
   /**

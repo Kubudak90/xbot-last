@@ -2,6 +2,7 @@
 
 import { BaseAIProvider, ProviderConfig, ProviderHealth } from './base-provider'
 import type { GenerateRequest, GenerateResponse } from '@/types/ai'
+import { aiLogger as logger } from '@/lib/logger'
 
 interface OllamaResponse {
   model: string
@@ -138,7 +139,11 @@ Respond with ONLY the tweet text, no explanations or quotes.`
 
       const data = await response.json() as OllamaTagsResponse
       return data.models.map(m => m.name)
-    } catch {
+    } catch (error) {
+      logger.debug('Failed to list Ollama models', {
+        baseUrl: this.baseUrl,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return []
     }
   }

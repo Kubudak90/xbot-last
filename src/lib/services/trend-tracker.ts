@@ -3,6 +3,7 @@
 
 import { getAIProviderManager, initializeProviders } from '@/lib/ai'
 import type { AIProviderType } from '@/types/ai'
+import { logger } from '@/lib/logger'
 
 export interface TrendingTopic {
   id: string
@@ -156,8 +157,11 @@ Respond with ONLY the JSON.`
         predictedDuration: analysis.predictedDuration || 'short',
         engagementOpportunity: analysis.engagementOpportunity || 0.5,
       }
-    } catch {
-      // Default analysis if AI fails
+    } catch (error) {
+      logger.debug('Trend analysis failed, using defaults', {
+        trendName: trend.name,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      })
       return {
         trend,
         sentiment: 'neutral',
@@ -225,8 +229,11 @@ Respond with ONLY the JSON.`
           bestPostTime: this.calculateBestPostTime(match.trend),
           confidenceScore: suggestion.confidence || 0.7,
         })
-      } catch {
-        // Skip failed suggestions
+      } catch (error) {
+        logger.debug('Failed to generate content suggestion for trend', {
+          trendName: match.trend.name,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
       }
     }
 
